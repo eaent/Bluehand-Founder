@@ -29,10 +29,3 @@
 3. **상세 조회**: 마커를 클릭하여 해당 지점이 '종합 블루핸즈'인지 '전문 블루핸즈'인지 확인합니다.
 4. **연락**: 제공된 전화번호를 통해 바로 정비 예약을 진행합니다.
 
-## 🚀 Quick Start
-
-### Installation
-```bash
-git clone [https://github.com/JJonyeok2/Bluehand_Founder.git](https://github.com/JJonyeok2/Bluehand_Founder.git)
-cd Bluehand_Founder
-pip install -r requirements.txt
