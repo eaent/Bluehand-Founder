@@ -72,3 +72,5 @@ CREATE TABLE bluehands (
     FOREIGN KEY (type_id) REFERENCES service_types(id)
     ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
