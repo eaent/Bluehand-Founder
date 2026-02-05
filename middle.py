@@ -9,47 +9,47 @@ import streamlit.components.v1 as components
 from math import radians, cos, sin, asin, sqrt
 from streamlit_js_eval import get_geolocation
 
-# 서비스 라벨 전처리(같은 폴더에 service_labels.py 필요)
-from service_labels import FLAG_LABELS, labels_from_row, format_labels
-
 # -----------------------------------------------------------------------------
-# 설정
+# 1. 설정 및 옵션 정의
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="블루핸즈 근처 조회",
+    page_title="블루핸즈 찾기",
     page_icon="🚘",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
+# 필터 옵션 -> DB 저장된 key값 사용하셔야 합니다.
+FILTER_OPTIONS = {
+    "is_ev": "⚡ 전기차 전담",
+    "is_hydrogen": "💧 수소차 전담",
+    "is_frame": "🔨 판금/차체 수리",
+    "is_excellent": "🏆 우수 협력점",
+    "is_n_line": "🏎️ N-Line 전담",
+}
+FLAG_COLS_SQL = ", ".join(FILTER_OPTIONS.keys())
+
+######################## 개인마다 DB 비밀번호 수정하세요 #########################
 DB_CONFIG = {
-    "host": os.getenv("MYSQL_HOST", "localhost"),
-    "user": os.getenv("MYSQL_USER", "root"),
-    "password": os.getenv("MYSQL_PASSWORD", "mysql"),
-    "database": os.getenv("MYSQL_DB", "bluehands_db"),
+    "host": "localhost",
+    "user": "root",
+    "password": "root",
+    "database": "bluehands_db",
     "charset": "utf8mb4",
 }
-
-FLAG_COLS_SQL = ", ".join(FLAG_LABELS.keys())
 
 
 def get_conn():
     return mysql.connector.connect(**DB_CONFIG)
 
 
-# =============================================================================
-# [Marker.py] 거리 계산 로직 (Haversine)
-# =============================================================================
+# -----------------------------------------------------------------------------
+# 2. 유틸리티 함수 -> 하버사인 함수 설명은 노션에 정리해뒀습니다.
+# -----------------------------------------------------------------------------
 
 def haversine(lon1, lat1, lon2, lat2):
-    """
-    lon1, lat1: 내 위치 (또는 기준점)
-    lon2, lat2: 가게 위치
-    """
-    if any(x is None for x in [lon1, lat1, lon2, lat2]):
-        return None
-
-    R = 6371  # 지구 반지름 (km)
+    if any(x is None for x in [lon1, lat1, lon2, lat2]): return None
+    R = 6371
     lon1, lat1, lon2, lat2 = map(radians, [float(lon1), float(lat1), float(lon2), float(lat2)])
     dlon = lon2 - lon1
     dlat = lat2 - lat1
@@ -58,269 +58,191 @@ def haversine(lon1, lat1, lon2, lat2):
     return c * R
 
 
-def add_markers_to_map(m, rows, user_lat=None, user_lng=None):
-    """
-    지도에 마커 추가 함수
-    user_lat, user_lng: 실제 GPS 좌표 (있으면 거리 계산, 없으면 경고 표시)
-    """
-    fg = folium.FeatureGroup(name="검색 결과")
-
-    for row in rows:
-        shop_lat = row.get("latitude")
-        shop_lng = row.get("longitude")
-
-        # 좌표 없는 데이터 건너뜀
-        if shop_lat is None or shop_lng is None:
-            continue
-
-        try:
-            lat, lng = float(shop_lat), float(shop_lng)
-        except (TypeError, ValueError):
-            continue
-
-        name = row.get("name", "지점")
-        addr = row.get("address", "")
-        phone = row.get("phone", "")
-
-        # -----------------------------------------------------------
-        # 서비스 라벨 전처리: is_* 중 1인 것만 한글로
-        # -----------------------------------------------------------
-        services = labels_from_row(row)
-        services_text = format_labels(services, sep=" · ")
-
-        services_block = ""
-        if services_text:
-            services_block = f"""
-            <div style="margin-top:6px; border-top:1px solid #ddd; padding-top:6px;">
-                <div style="font-size:12px; font-weight:bold;">가능 서비스</div>
-                <div style="font-size:12px;">{services_text}</div>
-            </div>
-            """
-
-        # -----------------------------------------------------------
-        # 📏 거리 계산 로직
-        # -----------------------------------------------------------
-        dist_str = ""
-        if user_lat is not None and user_lng is not None:
-            dist_km = haversine(user_lng, user_lat, lng, lat)
-            if dist_km is not None:
-                if dist_km < 1:
-                    dist_str = f"🚶 내 위치에서 {int(dist_km * 1000)}m"
-                else:
-                    dist_str = f"🚗 내 위치에서 {dist_km:.1f}km"
-        else:
-            dist_str = "⚠️ 위치 권한 필요 (거리 계산 불가)"
-
-        # 팝업 HTML
-        html = f"""
-        <div style="width:240px; font-family:sans-serif;">
-            <h4 style="margin:0; color:#0054a6;">{name}</h4>
-            <p style="font-size:12px; margin:5px 0;">{addr}</p>
-            <p style="font-size:12px; margin:0; color:blue;">📞 {phone}</p>
-            {services_block}
-            <div style="margin-top:6px; border-top:1px solid #ddd; padding-top:6px;">
-                <span style="color:red; font-weight:bold; font-size:13px;">{dist_str}</span>
-            </div>
-        </div>
-        """
-
-        folium.Marker(
-            [lat, lng],
-            popup=folium.Popup(html, max_width=320),
-            tooltip=f"{name}",
-            icon=folium.Icon(color="blue", icon="car", prefix="fa"),
-        ).add_to(fg)
-
-    fg.add_to(m)
-
-
-# =============================================================================
-# [selectbox.py] DB 조회 함수들
-# =============================================================================
-
-@st.cache_data(ttl=600)
-def get_bluehands_data(search_text):
-    conn = None
-    try:
-        conn = get_conn()
-        cursor = conn.cursor(dictionary=True)
-
-        query = f"SELECT id, name, latitude, longitude, address, phone, {FLAG_COLS_SQL} FROM bluehands"
-        params = []
-
-        if search_text:
-            query += " WHERE name LIKE %s OR address LIKE %s"
-            pattern = f"%{search_text}%"
-            params = [pattern, pattern]
-
-        cursor.execute(query, params)
-        return cursor.fetchall()
-    except Exception:
-        return []
-    finally:
-        if conn:
-            conn.close()
-
-
-@st.cache_data(ttl=600)
-def get_shop_list():
-    conn = get_conn()
-    try:
-        return pd.read_sql("""
-            SELECT DISTINCT a.name AS shop_name, b.name AS region_name
-            FROM bluehands a
-            JOIN `regions` b ON a.`region_id` = b.id
-            WHERE a.name IS NOT NULL
-            ORDER BY b.name, a.name
-            LIMIT 500
-        """, conn)
-    except Exception:
-        return pd.read_sql("SELECT name AS shop_name, '지역' AS region_name FROM bluehands LIMIT 100", conn)
-    finally:
-        conn.close()
-
-
-def get_base_shop(selected_shop):
-    conn = get_conn()
-    try:
-        return pd.read_sql("""
-            SELECT a.*, b.name AS region_name
-            FROM bluehands a
-            JOIN `regions` b ON a.`region_id` = b.id
-            WHERE a.name = %s
-            LIMIT 1
-        """, conn, params=(selected_shop,))
-    finally:
-        conn.close()
-
-
-def get_nearby_four(selected_shop, base_lat, base_lng):
-    conn = get_conn()
-    try:
-        return pd.read_sql(f"""
-            SELECT
-                a.id,
-                a.name,
-                b.name AS region_name,
-                a.address,
-                a.phone,
-                a.latitude,
-                a.longitude,
-                {FLAG_COLS_SQL},
-                ST_Distance_Sphere(POINT(a.longitude, a.latitude), POINT(%s, %s)) AS distance_m
-            FROM bluehands a
-            JOIN `regions` b ON a.`region_id` = b.id
-            WHERE a.latitude IS NOT NULL AND a.longitude IS NOT NULL
-              AND NOT (a.name = %s)
-            ORDER BY distance_m
-            LIMIT 4
-        """, conn, params=(base_lng, base_lat, selected_shop))
-    finally:
-        conn.close()
-
-
 def scroll_down():
     js = """<script>setTimeout(function(){window.parent.scrollTo({top: 600, behavior:'smooth'});}, 300);</script>"""
     components.html(js, height=0)
 
 
-# =============================================================================
-# [App] UI 시작
-# =============================================================================
+def format_services_html(row):
+    badges = ""
+    for col, label in FILTER_OPTIONS.items():
+        if row.get(col) == 1:
+            badges += f'<span style="background:#e3f2fd; color:#0d47a1; padding:2px 6px; border-radius:4px; font-size:11px; margin-right:4px;">{label}</span>'
+    return f'<div style="margin-top:5px;">{badges}</div>' if badges else ""
 
+
+def add_markers_to_map(m, rows, user_lat=None, user_lng=None):
+    fg = folium.FeatureGroup(name="검색 결과")
+    for row in rows:
+        try:
+            lat, lng = float(row['latitude']), float(row['longitude'])
+        except:
+            continue
+
+        name = row.get("name", "지점")
+        addr = row.get("address", "")
+        phone = row.get("phone", "")
+        dist_str = "⚠️ 권한 필요"
+        if user_lat and user_lng:
+            d = haversine(user_lng, user_lat, lng, lat)
+            if d is not None: dist_str = f"🚶 {int(d * 1000)}m" if d < 1 else f"🚗 {d:.1f}km"
+
+        services_html = format_services_html(row)
+        html = f"""
+        <div style="width:240px; font-family:sans-serif;">
+            <h4 style="margin:0; color:#0054a6;">{name}</h4>
+            <p style="font-size:12px; margin:5px 0;">{addr}</p>
+            {services_html}
+            <p style="font-size:12px; margin:5px 0; color:blue;">📞 {phone}</p>
+            <div style="border-top:1px solid #ddd; padding-top:5px; margin-top:5px;">
+                <span style="color:red; font-weight:bold; font-size:13px;">{dist_str}</span>
+            </div>
+        </div>
+        """
+        folium.Marker([lat, lng], popup=folium.Popup(html, max_width=300), tooltip=name,
+                      icon=folium.Icon(color="blue", icon="car", prefix="fa")).add_to(fg)
+    fg.add_to(m)
+
+
+# -----------------------------------------------------------------------------
+# 3. DB 조회 함수
+# -----------------------------------------------------------------------------
+@st.cache_data(ttl=3600)
+def get_regions():
+    conn = None
+    try:
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM regions ORDER BY id")
+        return [row[0] for row in cursor.fetchall()]
+    except:
+        return []
+    finally:
+        if conn: conn.close()
+
+
+@st.cache_data(ttl=600)
+def get_bluehands_data(search_text, selected_filters, region_filter):
+    conn = None
+    try:
+        conn = get_conn()
+        cursor = conn.cursor(dictionary=True)
+
+        query = f"""
+            SELECT a.id, a.name, a.latitude, a.longitude, a.address, a.phone, {FLAG_COLS_SQL}
+            FROM bluehands a
+            LEFT JOIN regions b ON a.region_id = b.id
+        """
+
+        conditions = []
+        params = []
+
+        if search_text:
+            conditions.append("(a.name LIKE %s OR a.address LIKE %s)")
+            ptn = f"%{search_text}%"
+            params.extend([ptn, ptn])
+
+        if selected_filters:
+            for col in selected_filters:
+                conditions.append(f"a.{col} = 1")
+
+        if region_filter and region_filter != "(전체)":
+            conditions.append("b.name = %s")
+            params.append(region_filter)
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        cursor.execute(query, params)
+        return cursor.fetchall()
+
+    except mysql.connector.Error as err:
+        st.error(f"❌ SQL 에러: {err}")
+        return []
+    except Exception as e:
+        st.error(f"❌ 기타 에러: {e}")
+        return []
+    finally:
+        if conn: conn.close()
+
+
+# -----------------------------------------------------------------------------
+# 4. 메인 UI
+# -----------------------------------------------------------------------------
 st.markdown("""
 <div class="main-header" style="background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 50%, #3d7ab5 100%); padding: 2rem; border-radius: 20px; margin-bottom: 2rem; text-align: center; color: white;">
-    <h1>🚘 내 위치 기준 거리 계산기</h1>
-    <p>브라우저 상단의 [위치 허용]을 눌러야 정확한 거리가 나옵니다.</p>
+    <h1>🚘 블루핸즈 통합 검색</h1>
 </div>
 """, unsafe_allow_html=True)
 
-# 사용자 실제 GPS 위치 가져오기
+# (1) GPS 확인
 loc = get_geolocation()
-user_lat = None
-user_lng = None
-
-if loc and "coords" in loc:
-    user_lat = loc["coords"]["latitude"]
-    user_lng = loc["coords"]["longitude"]
-    st.success(f"📍 GPS 연결 성공: 현재 위치 ({user_lat:.4f}, {user_lng:.4f}) 기준으로 거리를 계산합니다.")
+user_lat, user_lng = None, None
+if loc and 'coords' in loc:
+    user_lat, user_lng = loc['coords']['latitude'], loc['coords']['longitude']
+    st.success("📍 현재 위치 확인 완료")
 else:
-    st.warning("⚠️ 아직 위치 권한이 없거나 로딩 중입니다. (기본값: 서울 시청 기준)")
+    st.warning("⚠️ 위치 권한 대기 중... (기본값: 서울 강남)")
 
-# 지점 선택 / 검색
-name_list_df = get_shop_list()
-options = ["(전체)"] + name_list_df["shop_name"].tolist()
+# (2) 사이드바 검색창(필터->검색)
+with st.sidebar:
+    st.header("🔍 검색 필터")
 
-shop_to_label = {}
-if not name_list_df.empty:
-    shop_to_label = dict(zip(
-        name_list_df["shop_name"],
-        name_list_df["shop_name"] + " (" + name_list_df["region_name"] + ")"
-    ))
+    region_list = get_regions()
+    if not region_list:
+        region_list = ["서울", "부산", "경기"]
 
-selected_shop = st.selectbox(
-    "지점을 선택하세요 (선택 시 해당 지점 + 가까운 4곳 표시)",
-    options,
-    format_func=lambda x: x if x == "(전체)" else shop_to_label.get(x, x),
-)
+    selected_region = st.selectbox("🗺️ 지역 선택 (시/도)", ["(전체)"] + region_list)
+    st.write("---")
+    st.info("🛠️ 서비스 옵션")
+    selected_labels = st.multiselect("필요한 정비 항목", options=list(FILTER_OPTIONS.values()), default=[])
+    reverse_map = {v: k for k, v in FILTER_OPTIONS.items()}
+    selected_service_cols = [reverse_map[label] for label in selected_labels]
 
-search_query = st.text_input("또는 지역명 직접 검색 (예: 강남)", key="text_search")
+    # (3) 사이드 검색창(입력)
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        placeholder_text = f"'{selected_region}' 내 검색" if selected_region != "(전체)" else "지점명 또는 주소 검색"
+        search_query = st.text_input("검색어 입력", placeholder=placeholder_text, key="main_search")
 
-# 검색 시 스크롤 이동
-if "last_search" not in st.session_state:
-    st.session_state.last_search = ""
-if search_query and search_query != st.session_state.last_search:
-    st.session_state.last_search = search_query
-    scroll_down()
+    with col2:
+        st.write("")
+        st.write("")
+        if st.button("검색", use_container_width=True):
+            if search_query: scroll_down()
 
-# 마커 데이터 준비
-marker_rows = []
-map_center = [37.5665, 126.9780]
+# (4) 결과 조회
+should_search = search_query or selected_service_cols or (selected_region != "(전체)")
 
-# (A) 셀렉트박스로 지점을 선택했을 때
-if selected_shop != "(전체)":
-    base_df = get_base_shop(selected_shop)
-    if not base_df.empty:
-        st.subheader(f"선택: {selected_shop}")
-        base_lat = base_df.loc[0, "latitude"]
-        base_lng = base_df.loc[0, "longitude"]
+if should_search:
+    data_list = get_bluehands_data(search_query, selected_service_cols, selected_region)
 
-        if base_lat and base_lng:
-            map_center = [float(base_lat), float(base_lng)]
-            marker_rows.append(base_df.iloc[0].to_dict())
+    if not data_list:
+        st.error("검색 결과가 없습니다.")
+    else:
+        st.subheader(f"🏢 검색 결과: {len(data_list)}개")
 
-            near_df = get_nearby_four(selected_shop, base_lat, base_lng)
-            if not near_df.empty:
-                st.caption("가까운 지점 4곳")
-                for _, r in near_df.iterrows():
-                    marker_rows.append(r.to_dict())
-                st.dataframe(near_df[["name", "region_name", "distance_m"]], hide_index=True)
+    # 📌 [수정됨] 기본 좌표를 강남역(37.4979, 127.0276)으로 설정
+    map_center = [37.4979, 127.0276]
 
-# (B) 텍스트로 검색했을 때
-if search_query:
-    data_list = get_bluehands_data(search_query)
+    if user_lat:
+        map_center = [user_lat, user_lng]
+    elif data_list and data_list[0].get('latitude'):
+        map_center = [float(data_list[0]['latitude']), float(data_list[0]['longitude'])]
+
+    m = folium.Map(location=map_center, zoom_start=13)
+    LocateControl().add_to(m)
+    if user_lat: folium.Marker([user_lat, user_lng], icon=folium.Icon(color="red", icon="user", prefix="fa")).add_to(m)
+    if data_list: add_markers_to_map(m, data_list, user_lat, user_lng)
+
+    st_folium(m, height=500, use_container_width=True)
+
     if data_list:
-        marker_rows = data_list
-        if data_list[0].get("latitude"):
-            map_center = [float(data_list[0]["latitude"]), float(data_list[0]["longitude"])]
+        df = pd.DataFrame(data_list)
+        st.dataframe(df[["name", "address", "phone"]], use_container_width=True, hide_index=True)
+else:
+    st.info("👈 왼쪽 사이드바에서 지역을 선택하거나, 👆 위에서 검색어를 입력하세요.")
 
-# (C) GPS가 있고, 아무것도 선택 안 했으면 -> 내 위치가 지도 중심
-if selected_shop == "(전체)" and not search_query and user_lat:
-    map_center = [user_lat, user_lng]
-
-# 지도 그리기
-st.markdown("### 📍 지도 보기")
-m = folium.Map(location=map_center, zoom_start=13)
-LocateControl().add_to(m)
-
-if user_lat and user_lng:
-    folium.Marker(
-        [user_lat, user_lng],
-        popup="현재 내 위치",
-        icon=folium.Icon(color="red", icon="user", prefix="fa")
-    ).add_to(m)
-
-if marker_rows:
-    add_markers_to_map(m, marker_rows, user_lat, user_lng)
-
-st_folium(m, height=500, use_container_width=True)
+    # 📌 [수정됨] 초기 화면 좌표도 강남역(37.4979, 127.0276)으로 설정
+    m = folium.Map(location=[37.4979, 127.0276], zoom_start=13)
+    st_folium(m, height=400, use_container_width=True)
