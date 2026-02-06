@@ -1,7 +1,3 @@
-<div align="center">
-  <img src="Hyundai.jpg" width="512" height="512" style="border-radius: 50%; object-fit: cover; object-position: center;" />
-  <br/>
-
 # 🚘 블루핸즈 통합 검색 서비스 (Bluehands Finder)
 
 사용자의 현재 위치 또는 선택한 지역을 기반으로 **현대자동차 블루핸즈(Bluehands)** 정비소를 조회하고, 원하는 정비 옵션(전기차, 수소차, 판금 등)별로 필터링하여 지도와 목록으로 보여주는 웹 애플리케이션입니다.

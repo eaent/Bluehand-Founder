@@ -2,7 +2,6 @@ import os  # 운영체제(OS)와 상호작용하기 위한 라이브러리 (환�
 import math  # 기본적인 수학 계산을 위한 파이썬 내장 라이브러리
 import streamlit as st  # 웹 애플리케이션 UI 프레임워크
 import mysql.connector  # MySQL 연결/쿼리 실행
-import pandas as pd  # 데이터 처리
 import folium  # 지도 생성/마커 표시
 from folium.plugins import LocateControl  # 현재 위치 버튼
 from streamlit_folium import st_folium  # Streamlit에 Folium 지도 렌더링
@@ -24,15 +23,15 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# [CSS] 전체 디자인 커스텀 (폰트, 여백, 카드 스타일, 페이지네이션 정렬 등)
+# [CSS] 전체 디자인 커스텀
 st.markdown(
     """
 <style>
-    /* 1. 전체 폰트 및 기본 스타일 설정 (Pretendard 폰트 사용) */
+    /* 1. 폰트 설정 (Pretendard) */
     @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
     html, body, [class*="css"] { font-family: 'Pretendard', sans-serif; }
 
-    /* 2. 메인 헤더 그라데이션 배너 디자인 */
+    /* 2. 헤더 디자인 */
     .main-header {
         background: linear-gradient(135deg, #002c5f 0%, #0054a6 100%);
         padding: 2.5rem;
@@ -45,15 +44,56 @@ st.markdown(
     .main-header h1 { font-weight: 700; margin: 0; font-size: 2rem; color: white !important; }
     .main-header p  { font-size: 1rem; opacity: 0.9; margin-top: 0.5rem; color: #e0f2fe !important; }
 
-    /* 3. 카드형 레이아웃 스타일 (지도, 테이블 등을 감싸는 박스) */
+    /* 3. 카드형 레이아웃 */
     .stCard {
         background-color: white;
         padding: 1.5rem;
         border-radius: 12px;
         border: 1px solid #e5e7eb;
         box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        margin-bottom: 1.5rem;
+        margin-bottom: 1.0rem;
     }
+
+    /* 지도 아래 "검색결과 + 범례" 바 (흰색 고정) */
+    .result-bar {
+        background: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 12px 16px;
+        margin-top: 12px;
+        margin-bottom: 12px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+    }
+    .result-left {
+        font-weight: 800;
+        color: #111827;
+        font-size: 16px;
+    }
+    .legend-row {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 16px;
+        flex-wrap: nowrap;
+        white-space: nowrap;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 700;
+        color: #111827;
+        font-size: 14px;
+    }
+    .legend-pin { width: 16px; height: 16px; display: block; }
+    .pin-green { fill: #2E7D32; }
+    .pin-blue  { fill: #1565C0; }
+    .pin-red   { fill: #C62828; }
 
     /* 4. 버튼 스타일 통일 */
     div.stButton > button {
@@ -67,7 +107,6 @@ st.markdown(
         transition: all 0.2s;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
-    /* 검색 버튼(파란색 강조) 스타일 */
     div[data-testid="column"] button[kind="primary"] {
         background-color: #0054a6;
         color: white;
@@ -79,7 +118,7 @@ st.markdown(
         background-color: #f9fafb;
     }
 
-    /* 5. 페이지네이션 라디오 버튼 컨테이너 (중앙 정렬, 줄바꿈 방지) */
+    /* 5. 페이지네이션 라디오 버튼 스타일 */
     div[role="radiogroup"] {
         display: flex;
         flex-direction: row;
@@ -87,13 +126,10 @@ st.markdown(
         justify-content: center;
         align-items: center;
         gap: 6px;
-        width: 100%;
+        width: auto;
     }
-
-    /* 6. 라디오 버튼 동그라미 숨기기 */
     div[role="radiogroup"] label > div:first-child { display: none !important; }
 
-    /* 7. 숫자 버튼 스타일 */
     div[role="radiogroup"] label {
         background: white !important;
         border: 1px solid #d1d5db !important;
@@ -108,8 +144,6 @@ st.markdown(
         cursor: pointer;
         box-shadow: 0 1px 2px rgba(0,0,0,0.05);
     }
-
-    /* 8. 숫자 텍스트 정중앙 정렬 */
     div[role="radiogroup"] label > div {
         color: #4b5563 !important;
         font-size: 14px !important;
@@ -125,15 +159,11 @@ st.markdown(
         padding-bottom: 1px !important;
         line-height: normal !important;
     }
-
-    /* 9. Hover */
     div[role="radiogroup"] label:hover {
         border-color: #0054a6 !important;
         color: #0054a6 !important;
         background-color: #f0f7ff !important;
     }
-
-    /* 10. 선택된 버튼 스타일 */
     div[role="radiogroup"] label[data-baseweb="radio"] {
         background-color: #0054a6 !important;
         border-color: #0054a6 !important;
@@ -143,86 +173,82 @@ st.markdown(
         font-weight: 700 !important;
     }
 
-    /* 11. 좌우 이동 버튼 높이 맞춤 */
-    div[data-testid="column"] .stButton button {
+    /* ---------------------------------------------------------------------
+       [핵심] 페이지네이션 "뷰포트(화면) 정중앙" 고정
+       - 사이드바 ON/OFF 여부와 무관하게 화면 가운데로 맞춤
+       - st.columns로 만들어진 3개 컬럼을 content 폭으로 줄이고 가운데로 모음
+    --------------------------------------------------------------------- */
+
+    /* radiogroup(숫자 버튼)이 들어있는 "그 행(stHorizontalBlock)"만 골라서 처리 */
+    div[data-testid="stHorizontalBlock"]:has(div[role="radiogroup"]) {
+        width: 100vw !important;
+        margin-left: calc(50% - 50vw) !important;
+        margin-right: calc(50% - 50vw) !important;
+        display: flex !important;
+        justify-content: center !important;
+        align-items: center !important;
+        gap: 12px !important;
+        padding-bottom: 20px !important;
+    }
+
+    /* 그 행 안의 3개 column을 "늘어나지 않게" 내용 폭으로 줄임 */
+    div[data-testid="stHorizontalBlock"]:has(div[role="radiogroup"]) > div[data-testid="column"] {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    /* 페이지네이션 행 안의 ◀ ▶ 버튼만 고정폭으로 */
+    div[data-testid="stHorizontalBlock"]:has(div[role="radiogroup"]) div.stButton > button {
+        width: 44px !important;
+        min-width: 44px !important;
         height: 36px !important;
         min-height: 36px !important;
-        padding: 0px 12px !important;
-        display: flex !important;
+        padding: 0 !important;
+        display: inline-flex !important;
         justify-content: center !important;
         align-items: center !important;
     }
 
-    /* 12. 지도 범례(오른쪽 위) - 라이트/다크 자동 대응 + 핀 색상 고정 */
-    .map-legend {
-        display:flex;
-        justify-content:flex-end;
-        gap:18px;
-        align-items:center;
-        padding-top:12px;
-        flex-wrap:nowrap;
-        white-space:nowrap;
+    /* ◀/▶가 없는 경우에도 자리 유지하는 스페이서 */
+    .pager-spacer {
+        width: 44px;
+        height: 36px;
+        opacity: 0;  /* 안 보이게 하되 공간은 유지 */
     }
 
-    /* Streamlit 테마 텍스트 색(라이트/다크)을 그대로 따라가게 */
-    .map-legend, .map-legend * {
-        color: var(--text-color, inherit) !important;
-    }
-
-    .map-legend .legend-item {
-        display:flex;
-        align-items:center;
-        gap:6px;
-        font-weight:700;
-    }
-
-    .map-legend .legend-pin {
-        width:16px;
-        height:16px;
-        display:block;
-        flex:0 0 auto;
-    }
-
-    /* 범례 핀 색 고정 */
-    .map-legend .pin-green { fill:#2E7D32; }
-    .map-legend .pin-blue  { fill:#1565C0; }
-    .map-legend .pin-red   { fill:#C62828; }
 </style>
 """,
     unsafe_allow_html=True,
 )
 
-# 필터 옵션 정의: DB 컬럼명(key)과 화면에 보여줄 텍스트(value) 매핑
+# 필터 옵션
 FILTER_OPTIONS = {
     "is_ev": "⚡ 전기차 전담",
     "is_hydrogen": "💧 수소차 전담",
     "is_frame": "🔨 판금/차체 수리",
-    "is_cs_excellent": "🏆 우수 협력점",  # (확정) 컬럼명
+    "is_cs_excellent": "🏆 우수 협력점",
     "is_n_line": "🏎️ N-Line 전담",
 }
 FLAG_COLS_SQL = ", ".join(FILTER_OPTIONS.keys())
 
-# (추가) 지도 밖(오른쪽 위) 범례 HTML
-# - inline style 제거(필요 없음): CSS에서 제어
-# - pin-* 클래스에 fill이 CSS로 적용됨
+# 범례 HTML (흰 배경에 올릴 거라 다크모드 대응 불필요)
 LEGEND_HTML = """
-<div class="map-legend">
+<div class="legend-row">
   <div class="legend-item">
-    <svg class="legend-pin pin-green" width="16" height="16" viewBox="0 0 24 24">
+    <svg class="legend-pin pin-green" viewBox="0 0 24 24">
       <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
     </svg>
     <span>전문 블루핸즈</span>
   </div>
-
   <div class="legend-item">
-    <svg class="legend-pin pin-blue" width="16" height="16" viewBox="0 0 24 24">
+    <svg class="legend-pin pin-blue" viewBox="0 0 24 24">
       <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
     </svg>
     <span>종합 블루핸즈</span>
   </div>
-
   <div class="legend-item">
-    <svg class="legend-pin pin-red" width="16" height="16" viewBox="0 0 24 24">
+    <svg class="legend-pin pin-red" viewBox="0 0 24 24">
       <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/>
     </svg>
     <span>하이테크센터</span>
@@ -230,8 +256,6 @@ LEGEND_HTML = """
 </div>
 """
 
-
-# 데이터베이스 연결 설정
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "port": int(os.getenv("DB_PORT", "3306")),
@@ -241,20 +265,15 @@ DB_CONFIG = {
     "charset": "utf8mb4",
 }
 
-# 한 페이지당 보여줄 목록의 개수
 PAGE_SIZE = 5
 
-
 # -----------------------------------------------------------------------------
-# 2. 헬퍼 함수 정의
+# 2. 헬퍼 함수
 # -----------------------------------------------------------------------------
 def get_conn():
-    """DB 연결 객체를 생성하여 반환합니다."""
     return mysql.connector.connect(**DB_CONFIG)
 
-
 def haversine(lon1, lat1, lon2, lat2):
-    """두 지점(위도, 경도) 사이의 거리를 계산하는 하버사인 공식 (km)."""
     if any(x is None for x in [lon1, lat1, lon2, lat2]):
         return None
     R = 6371
@@ -265,15 +284,11 @@ def haversine(lon1, lat1, lon2, lat2):
     c = 2 * asin(sqrt(a))
     return c * R
 
-
 def scroll_down():
-    """검색 버튼 클릭 시 화면을 아래로 부드럽게 스크롤"""
     js = """<script>setTimeout(function(){window.parent.scrollTo({top: 500, behavior:'smooth'});}, 300);</script>"""
     components.html(js, height=0)
 
-
 def _service_text_from_row(row: dict) -> str:
-    """행(row)에서 값이 1인 서비스 옵션만 배지 HTML로 변환."""
     labels = [label for col, label in FILTER_OPTIONS.items() if row.get(col) == 1]
     return "".join(
         [
@@ -284,9 +299,7 @@ def _service_text_from_row(row: dict) -> str:
         ]
     )
 
-
 def format_services_html(row):
-    """지도 마커 팝업에 표시할 서비스 배지 HTML 생성."""
     badges = ""
     for col, label in FILTER_OPTIONS.items():
         if row.get(col) == 1:
@@ -296,12 +309,8 @@ def format_services_html(row):
             )
     return f'<div style="margin-top:8px; line-height:1.6;">{badges}</div>' if badges else ""
 
-
 def add_markers_to_map(m, rows, user_lat=None, user_lng=None):
-    """Folium 지도 객체(m)에 검색 결과(rows)를 마커로 추가."""
     fg = folium.FeatureGroup(name="검색 결과")
-
-    # (핵심) type_id별 핀 색상 매핑: 1=전문(초록), 2=종합(파랑), 3=하이테크(빨강)
     type_color_map = {1: "green", 2: "blue", 3: "red"}
 
     for row in rows:
@@ -314,21 +323,20 @@ def add_markers_to_map(m, rows, user_lat=None, user_lng=None):
         addr = row.get("address", "")
         phone = row.get("phone", "")
 
+        # type_id가 문자열로 올 수도 있어서 int 캐스팅
+        type_id = row.get("type_id")
+        try:
+            type_id = int(type_id)
+        except Exception:
+            type_id = None
+
         dist_str = "⚠️ 권한 필요"
-        if user_lat and user_lng:
+        if user_lat is not None and user_lng is not None:
             d = haversine(user_lng, user_lat, lng, lat)
             if d is not None:
                 dist_str = f"🚶 {int(d * 1000)}m" if d < 1 else f"내 위치로부터 🚗 {d:.1f}km"
 
         services_html = format_services_html(row)
-
-        # (수정) DB에서 type_id가 Decimal/str로 올 수도 있어서 int로 정규화
-        raw_type = row.get("type_id")
-        try:
-            type_id = int(raw_type)
-        except Exception:
-            type_id = None
-
         pin_color = type_color_map.get(type_id, "gray")
 
         html = f"""
@@ -342,7 +350,6 @@ def add_markers_to_map(m, rows, user_lat=None, user_lng=None):
             </div>
         </div>
         """
-
         folium.Marker(
             [lat, lng],
             popup=folium.Popup(html, max_width=300),
@@ -352,42 +359,41 @@ def add_markers_to_map(m, rows, user_lat=None, user_lng=None):
 
     fg.add_to(m)
 
+def render_result_bar(count: int):
+    st.markdown(
+        f"""
+<div class="result-bar">
+  <div class="result-left">검색 결과: <b>{count}</b>개의 지점을 찾았습니다.</div>
+  <div class="result-right">{LEGEND_HTML}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
 # -----------------------------------------------------------------------------
-# 3. 테이블 및 페이지네이션 렌더링 함수
+# 3. 테이블 및 페이지네이션 렌더링
 # -----------------------------------------------------------------------------
-def render_hy_table_page(rows_page: list[dict]):
-    """HTML 테이블 렌더링 (서비스 옵션 배지 포함)."""
+def build_hy_table_html(rows_page: list[dict]) -> str:
     css = """
     <style>
-      table.hy {
-        width:100%; border-collapse:separate; border-spacing:0;
-        border:1px solid #e5e7eb; border-radius:8px; overflow:hidden;
-        margin-bottom: 10px;
-      }
-      table.hy thead th{
-        background:#f3f4f6; color:#1f2937; padding:14px 12px; text-align:center;
-        font-weight:700; font-size:15px; border-bottom:1px solid #e5e7eb;
-      }
-      table.hy tbody td{
-        border-bottom:1px solid #f3f4f6; padding:14px 12px; vertical-align:middle;
-        font-size:14px; color:#4b5563; background:#fff;
-      }
+      table.hy { width:100%; border-collapse:separate; border-spacing:0; border:1px solid #e5e7eb; border-radius:8px; overflow:hidden; margin:0; table-layout: fixed; }
+      table.hy thead th { background:#f3f4f6; color:#1f2937; padding:14px 12px; text-align:center; font-weight:700; font-size:15px; border-bottom:1px solid #e5e7eb; }
+      table.hy tbody td { border-bottom:1px solid #f3f4f6; padding:14px 12px; vertical-align:middle; font-size:14px; color:#4b5563; background:#fff; }
       table.hy tbody tr:last-child td { border-bottom: none; }
 
-      .c-name{ width:20%; text-align:center; font-weight:700; color:#111827; }
-      .c-addr{ width:45%; text-align:left; line-height:1.4; }
-      .c-phone{ width:15%; text-align:center; color:#0054a6; font-weight:600; }
-      .c-svc{ width:20%; text-align:center; }
+      .c-name { width:15%; text-align:center; font-weight:700; color:#111827; }
+      .c-addr { width:40%; text-align:left; line-height:1.4; word-break: keep-all; }
+      .c-phone { width:10%; text-align:center; color:#0054a6; font-weight:600; }
+      .c-svc { width:35%; text-align:center; }
 
-      .muted{ color:#9ca3af; font-size:13px; text-align:center; display:block; }
+      .muted { color:#9ca3af; font-size:13px; text-align:center; display:block; }
     </style>
     """
 
     def s(x):
         return "" if x is None else str(x)
 
-    trs = []
+    trs = ""
     for r in rows_page:
         name = s(r.get("name"))
         addr = s(r.get("address"))
@@ -396,40 +402,39 @@ def render_hy_table_page(rows_page: list[dict]):
         if not svc_html:
             svc_html = '<span class="muted">-</span>'
 
-        trs.append(
-            f"""
-          <tr>
-            <td class="c-name">{name}</td>
-            <td class="c-addr">{addr}</td>
-            <td class="c-phone">{phone}</td>
-            <td class="c-svc">{svc_html}</td>
-          </tr>
-        """
+        trs += (
+            f"<tr>"
+            f'<td class="c-name">{name}</td>'
+            f'<td class="c-addr">{addr}</td>'
+            f'<td class="c-phone">{phone}</td>'
+            f'<td class="c-svc">{svc_html}</td>'
+            f"</tr>"
         )
 
-    html = f"""
-    {css}
-    <table class="hy">
-      <thead>
-        <tr>
-          <th>지점명</th>
-          <th>주소</th>
-          <th>전화번호</th>
-          <th>서비스 옵션</th>
-        </tr>
-      </thead>
-      <tbody>
-        {''.join(trs) if trs else '<tr><td colspan="4" style="text-align:center;padding:20px;">검색 결과가 없습니다.</td></tr>'}
-      </tbody>
-    </table>
-    """
-    components.html(html, height=80 + 70 * max(1, len(rows_page)), scrolling=False)
+    if not trs:
+        trs = '<tr><td colspan="4" style="text-align:center;padding:20px;">검색 결과가 없습니다.</td></tr>'
 
+    html = f"""{css}
+<table class="hy">
+  <thead>
+    <tr>
+      <th>지점명</th>
+      <th>주소</th>
+      <th>전화번호</th>
+      <th>서비스 옵션</th>
+    </tr>
+  </thead>
+  <tbody>{trs}</tbody>
+</table>
+"""
+    return html
+
+def render_hy_table_page(rows_page: list[dict]):
+    # stCard + table을 "한 번의 st.markdown"으로 출력 (불필요한 빈 흰색 블록 방지)
+    table_html = build_hy_table_html(rows_page)
+    st.markdown(f'<div class="stCard">{table_html}</div>', unsafe_allow_html=True)
 
 def render_paginated_table(rows_all: list[dict]):
-    """
-    페이지네이션(10개 블록 + ◀ ▶) + 카드형 테이블 출력
-    """
     total = len(rows_all)
     total_pages = max(1, math.ceil(total / PAGE_SIZE))
 
@@ -439,26 +444,22 @@ def render_paginated_table(rows_all: list[dict]):
     st.session_state.page = max(1, min(st.session_state.page, total_pages))
     page_now = st.session_state.page
 
+    # 테이블 출력
     start_idx = (page_now - 1) * PAGE_SIZE
     end_idx = start_idx + PAGE_SIZE
-
     render_hy_table_page(rows_all[start_idx:end_idx])
-    st.markdown("</div>", unsafe_allow_html=True)
 
     block_size = 10
     current_block = (page_now - 1) // block_size
     start_page = current_block * block_size + 1
     end_page = min(start_page + block_size - 1, total_pages)
-
     options = list(range(start_page, end_page + 1))
 
     try:
         current_index = options.index(page_now)
-    except ValueError:
+    except Exception:
         current_index = 0
         st.session_state.page = options[0]
-
-    st.write("")
 
     from_idx = start_idx + 1
     to_idx = min(end_idx, total)
@@ -468,13 +469,20 @@ def render_paginated_table(rows_all: list[dict]):
         unsafe_allow_html=True,
     )
 
-    _, col_prev, col_radio, col_next, _ = st.columns([3, 1, 6, 1, 3], gap="small", vertical_alignment="center")
+    # 페이지네이션 (◀ 숫자 ▶) - 좌/우 버튼이 없을 때도 자리 유지해서 중심 안 흔들리게 함
+    has_prev_block = start_page > 1
+    has_next_block = end_page < total_pages
+
+    col_prev, col_radio, col_next = st.columns([1, 6, 1], gap="small", vertical_alignment="center")
 
     with col_prev:
-        if start_page > 1:
-            if st.button("◀", key="prev_btn", use_container_width=True):
+        if has_prev_block:
+            if st.button("◀", key="prev_btn", use_container_width=False):
                 st.session_state.page = start_page - 1
                 st.rerun()
+        else:
+            # 버튼 없을 때도 폭 유지(시각적 중심 고정)
+            st.markdown('<div class="pager-spacer">.</div>', unsafe_allow_html=True)
 
     with col_radio:
         selected = st.radio(
@@ -487,22 +495,22 @@ def render_paginated_table(rows_all: list[dict]):
         )
 
     with col_next:
-        if end_page < total_pages:
-            if st.button("▶", key="next_btn", use_container_width=True):
+        if has_next_block:
+            if st.button("▶", key="next_btn", use_container_width=False):
                 st.session_state.page = end_page + 1
                 st.rerun()
+        else:
+            st.markdown('<div class="pager-spacer">.</div>', unsafe_allow_html=True)
 
     if selected != page_now:
         st.session_state.page = selected
         st.rerun()
 
-
 # -----------------------------------------------------------------------------
-# 4. DB 조회 함수
+# 4. DB 조회
 # -----------------------------------------------------------------------------
 @st.cache_data(ttl=3600)
 def get_regions():
-    """DB에서 지역(시/도) 목록을 가져옵니다."""
     conn = None
     try:
         conn = get_conn()
@@ -515,29 +523,21 @@ def get_regions():
         if conn:
             conn.close()
 
-
 @st.cache_data(ttl=600)
 def get_bluehands_data(search_text, selected_filters, region_filter):
-    """조건에 맞는 블루핸즈 지점을 DB에서 검색합니다."""
     conn = None
     try:
         conn = get_conn()
         cursor = conn.cursor(dictionary=True)
-
-        # (핵심) type_id 포함 (범례/핀색상용)
-        query = f"""
-            SELECT a.id, a.type_id, a.name, a.latitude, a.longitude, a.address, a.phone, {FLAG_COLS_SQL}
-            FROM bluehands a
-            LEFT JOIN regions b ON a.region_id = b.id
-        """
-
-        conditions = []
-        params = []
+        query = (
+            f"SELECT a.id, a.type_id, a.name, a.latitude, a.longitude, a.address, a.phone, {FLAG_COLS_SQL} "
+            f"FROM bluehands a LEFT JOIN regions b ON a.region_id = b.id"
+        )
+        conditions, params = [], []
 
         if search_text:
             conditions.append("(a.name LIKE %s OR a.address LIKE %s)")
-            ptn = f"%{search_text}%"
-            params.extend([ptn, ptn])
+            params.extend([f"%{search_text}%", f"%{search_text}%"])
 
         if selected_filters:
             for col in selected_filters:
@@ -553,32 +553,27 @@ def get_bluehands_data(search_text, selected_filters, region_filter):
         cursor.execute(query, params)
         return cursor.fetchall()
 
-    except mysql.connector.Error as err:
-        st.error(f"❌ SQL 에러: {err}")
-        return []
     except Exception as e:
-        st.error(f"❌ 기타 에러: {e}")
+        st.error(f"DB Error: {e}")
         return []
     finally:
         if conn:
             conn.close()
 
-
 # -----------------------------------------------------------------------------
-# 5. 메인 UI 구성
+# 5. 메인 UI
 # -----------------------------------------------------------------------------
 st.markdown(
     """
 <div class="main-header">
-    <h1>🚘 현대자동차 블루핸즈 찾기</h1>
-    <p>내 주변 가까운 서비스 네트워크를 쉽고 빠르게 검색하세요</p>
+  <h1>🚘 현대자동차 블루핸즈 찾기</h1>
+  <p>내 주변 가까운 서비스 네트워크를 쉽고 빠르게 검색하세요</p>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
-# (1) GPS 확인 로직
-loc = get_geolocation()
+loc = get_geolocation(component_key="main_geolocation")
 user_lat, user_lng = None, None
 if loc and "coords" in loc:
     user_lat, user_lng = loc["coords"]["latitude"], loc["coords"]["longitude"]
@@ -586,20 +581,14 @@ if loc and "coords" in loc:
 else:
     st.warning("⚠️ 위치 권한 대기 중... (기본값: 서울 강남)")
 
-# (2) 사이드바 구성
 with st.sidebar:
     st.header("🔍 검색 필터")
-
-    region_list = get_regions()
-    if not region_list:
-        region_list = ["서울", "부산", "경기"]
-
+    region_list = get_regions() or ["서울", "부산", "경기"]
     selected_region = st.selectbox("🗺️ 지역 선택 (시/도)", ["(전체)"] + region_list)
-    st.write("---")
 
+    st.write("---")
     st.subheader("🛠️ 서비스 옵션")
     selected_labels = st.multiselect("필요한 정비 항목", options=list(FILTER_OPTIONS.values()), default=[])
-
     reverse_map = {v: k for k, v in FILTER_OPTIONS.items()}
     selected_service_cols = [reverse_map[label] for label in selected_labels]
 
@@ -612,11 +601,9 @@ with st.sidebar:
             key="main_search",
             label_visibility="collapsed",
         )
-
     with col2:
         if st.button("검색", type="primary", use_container_width=True):
-            if search_query:
-                scroll_down()
+            scroll_down()
 
 should_search = search_query or selected_service_cols or (selected_region != "(전체)")
 
@@ -625,30 +612,22 @@ if should_search:
 
     if not data_list:
         st.error("조건에 맞는 검색 결과가 없습니다.")
-    else:
-        # (핵심) 검색결과 왼쪽 + 범례 오른쪽(지도 밖)
-        colL, colR = st.columns([3, 2], vertical_alignment="center")
-        with colL:
-            st.markdown(f"##### 🏢 검색 결과: **{len(data_list)}**개의 지점을 찾았습니다.")
-        with colR:
-            st.markdown(LEGEND_HTML, unsafe_allow_html=True)
 
-    # 지도 중심 좌표: 1) 검색결과 첫 지점 2) 사용자 위치 3) 강남역
+    # 지도 중심 좌표: 1) 검색결과 첫 지점 2) 추가로 사용자 위치 3) 강남역
     map_center = [37.4979, 127.0276]
     if data_list and data_list[0].get("latitude"):
         try:
             map_center = [float(data_list[0]["latitude"]), float(data_list[0]["longitude"])]
-        except (ValueError, TypeError):
-            if user_lat:
+        except Exception:
+            if user_lat is not None and user_lng is not None:
                 map_center = [user_lat, user_lng]
-    elif user_lat:
+    elif user_lat is not None and user_lng is not None:
         map_center = [user_lat, user_lng]
 
-    # 지도 카드 컨테이너
     m = folium.Map(location=map_center, zoom_start=13)
     LocateControl().add_to(m)
 
-    if user_lat:
+    if user_lat is not None and user_lng is not None:
         folium.Marker(
             [user_lat, user_lng],
             icon=folium.Icon(color="red", icon="user", prefix="fa"),
@@ -657,16 +636,22 @@ if should_search:
     if data_list:
         add_markers_to_map(m, data_list, user_lat, user_lng)
 
+    # 지도 출력
     st_folium(m, height=500, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
+    # 검색결과 + 범례 (지도 아래 흰색 바)
+    if data_list:
+        render_result_bar(len(data_list))
+
+    # 테이블 + 페이지네이션
     if data_list:
         render_paginated_table(data_list)
 
 else:
-    st.info("👈 왼쪽 사이드바에서 원하는 지역과 정비 옵션을 선택하거나, 지점명/주소를 검색해보세요.")
+    st.info("👈 왼쪽 사이드바에서 원하는 지역과 정비 옵션을 선택하거나, 지점명을 검색해보세요.")
     m = folium.Map(location=[37.4979, 127.0276], zoom_start=13)
     st_folium(m, height=450, use_container_width=True)
+<<<<<<< HEAD
     st.markdown("</div>", unsafe_allow_html=True)
 
 # FAQ HTML/CSS (resource)
@@ -679,3 +664,5 @@ faq_html_path = os.path.join(os.path.dirname(__file__), "resource", "faq.html")
 if os.path.exists(faq_html_path):
     with open(faq_html_path, "r", encoding="utf-8") as f:
         st.markdown(f.read(), unsafe_allow_html=True)
+=======
+>>>>>>> a5d8dbaf54b14f0e6ec9e27201dede706c213922
