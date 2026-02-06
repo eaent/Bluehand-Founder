@@ -200,7 +200,7 @@ def get_conn():
 PAGE_SIZE = 5
 
 
-<<<<<<< HEAD
+
 def _service_text_from_row(row: dict) -> str:
     """
     DB에서 가져온 행(row) 데이터 중 값이 1인 필터 항목만 추출하여
@@ -316,11 +316,9 @@ def render_paginated_table(rows_all: list[dict]):
 
     with center_sp:
         items = []
-=======
 # -----------------------------------------------------------------------------
 # 2. 헬퍼 함수 정의
 # -----------------------------------------------------------------------------
->>>>>>> ce0b04b64b0d7aa7d6e20cca483324fef8e4e3c7
 
         has_prev = start_page > 1
         has_next = end_page < total_pages
@@ -725,15 +723,12 @@ with st.sidebar:
 
     with col2:
         # 검색 버튼 클릭 시 스크롤 이동
-<<<<<<< HEAD
         if st.button("검색", use_container_width=True):
             st.session_state.page = 1
             if search_query:
                 scroll_down()
-=======
         if st.button("검색", type="primary", use_container_width=True):  # Primary 타입으로 강조
             if search_query: scroll_down()
->>>>>>> ce0b04b64b0d7aa7d6e20cca483324fef8e4e3c7
 
 # (4) 결과 조회 및 화면 표시
 # 검색어, 필터, 지역 선택 중 하나라도 있으면 검색 실행
