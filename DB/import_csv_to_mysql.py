@@ -17,7 +17,9 @@ import sys
 import re
 import pandas as pd
 import pymysql
+from dotenv import load_dotenv  # .env 로드
 
+load_dotenv()
 # ===== 사용자 설정(필요시 수정) =====
 # 하드코딩 대신 환경변수 우선 사용(로컬에서만 설정)
 MYSQL_HOST = os.getenv("MYSQL_HOST")
@@ -27,7 +29,7 @@ MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")  # 로컬 테스트용. git 커밋 
 MYSQL_DB = os.getenv("MYSQL_DB")
 CSV_PATH = os.getenv(
     "CSV_PATH",
-    r"C:\lecture\Bluehand_Founder\bluehands_final_all.csv"
+    r"C:\lecture\Bluehand_Founder\DB\bluehands_final_all.csv"
 )
 
 
