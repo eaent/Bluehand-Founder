@@ -614,7 +614,7 @@ def get_regions():
     try:
         conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM regions ORDER BY id")
+        cursor.execute("SELECT name FROM bluehands_db.regions ORDER BY id")
         return [row[0] for row in cursor.fetchall()]
     except:
         return []
